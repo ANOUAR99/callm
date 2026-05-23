@@ -1,0 +1,17 @@
+[
+  {
+    "name": "fn_add_numbers",
+    "description": "Add two numbers together.",
+    "parameters": {
+      "a": {
+        "type": "number"
+      },
+      "b": {
+        "type": "number"
+      }
+    },
+    "returns": {
+      "type": "number"
+    }
+  }
+]
