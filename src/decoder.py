@@ -11,8 +11,10 @@ class ConstraintDecoder:
         self.generated_text: str = ""
         self.is_finished: bool = False
         self.state: str = "EXPECTING_KEY"
+        
+        # 🚨 Tracks how many parameters we have generated!
+        self.keys_generated: int = 0  
 
-        # 🚨 NEW: Find every token that is strictly a colon or a space!
         self._colon_tokens = []
         for tid, tstr in self.manager.vocab.items():
             if tstr and all(c in ": \t\nĠ" for c in tstr):
@@ -22,10 +24,15 @@ class ConstraintDecoder:
         if self.state == "EXPECTING_KEY":
             return self.manager.get_string_token_ids()
         elif self.state == "EXPECTING_COLON":
-            # 🚨 THE FIX: Force the colon! No letters or numbers allowed!
             return self._colon_tokens
         elif self.state == "EXPECTING_VALUE":
-            return self.manager.get_number_token_ids()
+            valid_ids = self.manager.get_number_token_ids()
+            
+            # 🚨 THE KILL SHOT: If we have generated all expected keys, ban the comma!
+            if self.keys_generated >= len(self.expected_keys):
+                valid_ids = [tid for tid in valid_ids if "," not in self.manager.vocab.get(tid, "")]
+                
+            return valid_ids
         return []
 
     def apply_filter(self, logits: np.ndarray, valid_ids: List[int]) -> np.ndarray:
@@ -41,14 +48,13 @@ class ConstraintDecoder:
         self.generated_text += token_str
         
         if self.state == "EXPECTING_KEY":
-            # Check for an EVEN number of quotes to ensure the key is completely closed
             if '"' in token_str and self.generated_text.count('"') % 2 == 0:
                 self.state = "EXPECTING_COLON"
                 
-        # We use 'if' so the machine can jump multiple states on multi-character tokens (like '": ')
         if self.state == "EXPECTING_COLON":
             if ":" in token_str:
                 self.state = "EXPECTING_VALUE"
+                self.keys_generated += 1  # 🚨 Count the key once the colon drops!
                 
         if self.state == "EXPECTING_VALUE":
             if "," in token_str:

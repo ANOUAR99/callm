@@ -36,9 +36,7 @@ def main() -> None:
     for prompt_obj in prompts:
         print(f"\nProcessing prompt: {prompt_obj.prompt}")
         
-        # We use .join() to create a clean string without Python's list syntax
         available_funcs_str = ", ".join([f.name for f in functions])
-        # Few-Shot Pattern: Show it exactly how to answer!
         llm_prompt = (
             f"Task: Route the user's request to the correct function.\n"
             f"Available Functions: {available_funcs_str}\n\n"
@@ -70,7 +68,6 @@ def main() -> None:
             chosen_function_name += best_str
             input_ids.append(best_token_id)
             
-        # The Upgraded Bulldozer: Now crushes both single and double quotes!
         chosen_function_name = chosen_function_name.replace("Ġ", "").replace(" ", "").replace("'", "").replace('"', "").strip()
         print(f"-> LLM selected function: '{chosen_function_name}'")
         
@@ -84,18 +81,21 @@ def main() -> None:
             continue 
         
         expected_keys = list(chosen_func_def.parameters.keys()) 
-        # Safely extract the type whether Pydantic made it an object or left it as a dict!
         schema_types = {k: v["type"] if isinstance(v, dict) else v.type for k, v in chosen_func_def.parameters.items()} 
         decoder = ConstraintDecoder(manager, expected_keys, schema_types)
         
         # ==========================================
         # Phase C: Generator
         # ==========================================
-        # Few-Shot Pattern: Force it into a strict JSON mindset!
+        # 🚨 THE REAL FEW-SHOT PATTERN: With an actual JSON example!
         json_prompt = (
-            f"Task: Extract parameters as valid JSON.\n"
+            f"Task: Extract parameters as valid JSON.\n\n"
+            f"Function: fn_add_numbers\n"
+            f"Expected Keys: ['a', 'b']\n"
+            f"Request: 'Add 5 and 10'\n"
+            f"JSON:\n{{\"a\": 5, \"b\": 10}}\n\n"
             f"Function: {chosen_function_name}\n"
-            f"Expected Keys: {expected_keys}\n\n"
+            f"Expected Keys: {expected_keys}\n"
             f"Request: '{prompt_obj.prompt}'\n"
             f"JSON:\n{{"
         )
