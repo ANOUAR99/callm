@@ -9,6 +9,9 @@ class LLMManager:
         print("Initializing LLM Model...")
         self.model = Small_LLM_Model()
         self.vocab = self._load_vocabulary()
+        self._number_token_ids = None
+        self._string_token_ids = None
+        self._boolean_token_ids = None
         print(len(self.vocab))
 
     def _load_vocabulary(self) -> Dict[int, str]:
@@ -29,13 +32,20 @@ class LLMManager:
         return parsed_vocab
 
     def get_number_token_ids(self) -> list[int]:
+        # If we already did the math, instantly return the saved list!
+        if self._number_token_ids is not None:
+            return self._number_token_ids
+            
+        # Otherwise, do the heavy lifting ONCE
+        allowed_chars = set("0123456789.- \n\tĠ") # Use a Set for lightning-fast lookups
         valid_ids = []
-        
-        allowed_chars = set("0123456789.- Ġ")
-
         for token_id, token_str in self.vocab.items():
             if token_str and all(char in allowed_chars for char in token_str):
                 valid_ids.append(token_id)
+                
+        # Save it to the cache for next time, then return it
+        self._number_token_ids = valid_ids
+        return self._number_token_ids
                 
         return valid_ids
     

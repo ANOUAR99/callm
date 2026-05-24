@@ -65,7 +65,7 @@ def main():
                 
             chosen_function_name += best_str
             input_ids.append(best_token_id)
-            chosen_function_name = chosen_function_name.replace("Ġ", "").replace(" ", "").strip()
+        chosen_function_name = chosen_function_name.replace("Ġ", "").replace(" ", "").strip()
         print(f"-> LLM selected function: {chosen_function_name}")
         
         # ==========================================
