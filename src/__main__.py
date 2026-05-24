@@ -2,81 +2,74 @@ import argparse
 import json
 import sys
 import numpy as np
+import torch
+from typing import List
+
+print(f"🔥 GPU WAKEUP CHECK: {torch.cuda.is_available()}")
 
 from src.llm_manager import LLMManager
 from src.parser import load_function_definition, load_input_prompts
 from src.decoder import ConstraintDecoder
+from src.models import FunctionDefinition
 
 def parse_arguments():
     """Handles the command-line arguments required by the project."""
     parser = argparse.ArgumentParser(description="LLM Function Calling Engine")
-    
-    # Setting up the exact flags requested in the assignment with their default paths
-    parser.add_argument("--functions_definition", type=str, 
-                        default="data/input/function_definitions.json")
-    parser.add_argument("--input", type=str, 
-                        default="data/input/function_calling_tests.json")
-    parser.add_argument("--output", type=str, 
-                        default="data/output/function_calling_results.json")
-    
+    parser.add_argument("--functions_definition", type=str, default="data/input/function_definitions.json")
+    parser.add_argument("--input", type=str, default="data/input/function_calling_tests.json")
+    parser.add_argument("--output", type=str, default="data/output/function_calling_results.json")
     return parser.parse_args()
 
 def main():
-    # 1. Parse command line arguments
     args = parse_arguments()
-
-    # 2. Ingest the Data (Using your parser.py)
+    
     print("Loading definitions and prompts...")
     functions = load_function_definition(args.functions_definition)
     prompts = load_input_prompts(args.input)
-
-    # 3. Initialize the Engine (Using your manager.py)
+    
+    print("Initializing LLM Model...")
     manager = LLMManager()
     
     final_results = []
-
-    # 4. Process each prompt one by one
+    
     for prompt_obj in prompts:
         print(f"\nProcessing prompt: {prompt_obj.prompt}")
-        
-        # We need to build the specific prompt to feed the LLM here.
-        # It needs to include the available functions so the LLM knows what its options are!
-        llm_prompt = f"Available functions: {[f.name for f in functions]}\nUser: {prompt_obj.prompt}\nCall:"
+        llm_prompt = f"Given the prompt '{prompt_obj.prompt}', which function should be called? Return only the function name."
         
         # ==========================================
-        # PHASE A: Let the LLM pick the function name
+        # PHASE A: Pick the Function
         # ==========================================
         input_ids = manager.model.encode(llm_prompt)
         if hasattr(input_ids, "tolist"):
-            input_ids = input_ids.tolist() # Convert tensor to list
+            input_ids = input_ids.tolist()
         if len(input_ids) > 0 and isinstance(input_ids[0], list):
-            input_ids = input_ids[0] # Flatten it if it's 2D
+            input_ids = input_ids[0]
+            
         chosen_function_name = ""
         
         while True:
-            # Force the SDK's list into a flat NumPy array!
             logits = np.array(manager.model.get_logits_from_input_ids(input_ids)).flatten()
             best_token_id = int(np.argmax(logits)) 
             best_str = manager.model.decode([best_token_id])
             
-            # We added "(" to the stop conditions to prevent Python-style function calls!
             if best_str.strip() == "" or "{" in best_str or "\n" in best_str or "(" in best_str:
                 break
                 
             chosen_function_name += best_str
             input_ids.append(best_token_id)
+            
+        # The Bulldozer (Safely un-indented!)
         chosen_function_name = chosen_function_name.replace("Ġ", "").replace(" ", "").strip()
-        print(f"-> LLM selected function: {chosen_function_name}")
+        print(f"-> LLM selected function: '{chosen_function_name}'")
         
         # ==========================================
         # PHASE B: Set up the Decoder
         # ==========================================
         try:
-            # Find the matching blueprint from our parsed data
             chosen_func_def = next(f for f in functions if f.name == chosen_function_name)
         except StopIteration:
             print(f"⚠️ Error: LLM hallucinated an unknown function '{chosen_function_name}'. Skipping prompt.")
-            continue # This instantly stops the current loop and moves to the next prompt!
+            continue 
         
         expected_keys = list(chosen_func_def.parameters.keys()) 
         schema_types = {k: v["type"] for k, v in chosen_func_def.parameters.items()} 
@@ -86,47 +79,53 @@ def main():
         # ==========================================
         # PHASE C: The Constrained JSON Loop
         # ==========================================
-        # Force the model to start writing the parameters object by adding "{"
-        json_prompt = llm_prompt + chosen_function_name + "\n{"
+        json_prompt = f"Generate JSON parameters for the function {chosen_function_name} based on the prompt: '{prompt_obj.prompt}'. Parameters: {expected_keys}. Output valid JSON starting with {{"
+        
         input_ids = manager.model.encode(json_prompt)
         if hasattr(input_ids, "tolist"):
             input_ids = input_ids.tolist()
         if len(input_ids) > 0 and isinstance(input_ids[0], list):
             input_ids = input_ids[0]
+            
+        print("-> Generated Parameters: {", end="", flush=True)
         
-        while not decoder.is_finished:
-            # Force the SDK's list into a flat NumPy array!
+        max_tokens = 50 # THE KILL SWITCH
+        tokens_generated = 0
+
+        while not decoder.is_finished and tokens_generated < max_tokens:
             logits = np.array(manager.model.get_logits_from_input_ids(input_ids)).flatten()
             
-            # 1. Ask decoder for rules
             valid_ids = decoder.get_valid_ids_for_current_state()
-            
-            # 2. Filter the logits using our high-speed NumPy mask
             logits = decoder.apply_filter(logits, valid_ids)
             
-            # 3. Pick the winner
             best_token_id = int(np.argmax(logits))
             best_token_str = manager.model.decode([best_token_id])
             
-            # 4. Update our state tracker
+            # The real-time stream print
+            print(best_token_str, end="", flush=True)
+            
             decoder.update_state(best_token_str)
-            
-            # 5. Add to history for the next step
             input_ids.append(best_token_id)
+            tokens_generated += 1
             
-        print(f"-> Generated Parameters: {{{decoder.generated_text}")
+        print() # Clean new line when JSON completes
         
         # ==========================================
         # PHASE D: Save the Results
         # ==========================================
-        # Because of your Constraint Decoder, you can safely parse it as JSON!
-        final_results.append({
-            "prompt": prompt_obj.prompt,
-            "name": chosen_function_name,
-            "parameters": json.loads("{" + decoder.generated_text)
-        })
+        try:
+            # We add the opening bracket manually since we streamed it to the terminal!
+            clean_json_str = "{" + decoder.generated_text
+            parsed_params = json.loads(clean_json_str)
+            
+            final_results.append({
+                "prompt": prompt_obj.prompt,
+                "name": chosen_function_name,
+                "parameters": parsed_params
+            })
+        except json.JSONDecodeError:
+            print(f"⚠️ Error: Decoder generated invalid JSON for {chosen_function_name}. Skipping save.")
 
-    # 5. Write the final 100% valid JSON to the output file
     with open(args.output, "w") as f:
         json.dump(final_results, f, indent=4)
         
