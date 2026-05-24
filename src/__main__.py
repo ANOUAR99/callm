@@ -2,7 +2,10 @@ import argparse
 import json
 import os
 import numpy as np
+import torch
 from typing import List, Dict, Any
+
+print(f"🔥 GPU WAKEUP CHECK: {torch.cuda.is_available()}")
 
 from src.llm_manager import LLMManager
 from src.parser import load_function_definition, load_input_prompts
@@ -32,10 +35,14 @@ def main() -> None:
     
     for prompt_obj in prompts:
         print(f"\nProcessing prompt: {prompt_obj.prompt}")
-        available_funcs = [f.name for f in functions]
-        llm_prompt = f"Choose the correct function from this list: {available_funcs}\nUser Prompt: '{prompt_obj.prompt}'\nExact Function Name:"
         
+        # We use .join() to create a clean string without Python's list syntax
+        available_funcs_str = ", ".join([f.name for f in functions])
+        llm_prompt = f"Choose the correct function from this list: {available_funcs_str}\nUser Prompt: '{prompt_obj.prompt}'\nExact Function Name:"
+        
+        # ==========================================
         # Phase A: Router
+        # ==========================================
         input_ids_tensor = manager.model.encode(llm_prompt)
         input_ids: List[int] = []
         if hasattr(input_ids_tensor, "tolist"):
@@ -57,10 +64,13 @@ def main() -> None:
             chosen_function_name += best_str
             input_ids.append(best_token_id)
             
-        chosen_function_name = chosen_function_name.replace("Ġ", "").replace(" ", "").strip()
+        # The Upgraded Bulldozer: Now crushes both single and double quotes!
+        chosen_function_name = chosen_function_name.replace("Ġ", "").replace(" ", "").replace("'", "").replace('"', "").strip()
         print(f"-> LLM selected function: '{chosen_function_name}'")
         
+        # ==========================================
         # Phase B: Initialization
+        # ==========================================
         try:
             chosen_func_def = next(f for f in functions if f.name == chosen_function_name)
         except StopIteration:
@@ -71,7 +81,9 @@ def main() -> None:
         schema_types = {k: v.type for k, v in chosen_func_def.parameters.items()} 
         decoder = ConstraintDecoder(manager, expected_keys, schema_types)
         
+        # ==========================================
         # Phase C: Generator
+        # ==========================================
         json_prompt = f"You are a strict data formatter. Function: {chosen_function_name}. Expected Keys: {expected_keys}. Prompt: '{prompt_obj.prompt}'. Return ONLY a valid JSON object. Do not explain. Do not write code. \n{{"
         
         input_ids_tensor = manager.model.encode(json_prompt)
@@ -101,7 +113,9 @@ def main() -> None:
             
         print() 
         
+        # ==========================================
         # Phase D: Extraction and Garbage Cleansing
+        # ==========================================
         try:
             clean_json_str = "{" + decoder.generated_text
             if "}" in clean_json_str:
@@ -117,7 +131,9 @@ def main() -> None:
         except json.JSONDecodeError:
             print(f"⚠️ Error: Decoder generated invalid JSON. String was: {clean_json_str}")
 
+    # ==========================================
     # IO Write
+    # ==========================================
     try:
         os.makedirs(os.path.dirname(args.output), exist_ok=True)
         with open(args.output, "w", encoding="utf-8") as f:
