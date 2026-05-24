@@ -38,7 +38,13 @@ def main() -> None:
         
         # We use .join() to create a clean string without Python's list syntax
         available_funcs_str = ", ".join([f.name for f in functions])
-        llm_prompt = f"Choose the correct function from this list: {available_funcs_str}\nUser Prompt: '{prompt_obj.prompt}'\nExact Function Name:"
+        # Few-Shot Pattern: Show it exactly how to answer!
+        llm_prompt = (
+            f"Task: Route the user's request to the correct function.\n"
+            f"Available Functions: {available_funcs_str}\n\n"
+            f"Request: 'Add 5 and 10'\nFunction: fn_add_numbers\n"
+            f"Request: '{prompt_obj.prompt}'\nFunction: "
+        )
         
         # ==========================================
         # Phase A: Router
@@ -85,8 +91,15 @@ def main() -> None:
         # ==========================================
         # Phase C: Generator
         # ==========================================
-        json_prompt = f"You are a strict data formatter. Function: {chosen_function_name}. Expected Keys: {expected_keys}. Prompt: '{prompt_obj.prompt}'. Return ONLY a valid JSON object. Do not explain. Do not write code. \n{{"
-        
+        # Few-Shot Pattern: Force it into a strict JSON mindset!
+        json_prompt = (
+            f"Task: Extract parameters as valid JSON.\n"
+            f"Function: {chosen_function_name}\n"
+            f"Expected Keys: {expected_keys}\n\n"
+            f"Request: '{prompt_obj.prompt}'\n"
+            f"JSON:\n{{"
+        )
+                
         input_ids_tensor = manager.model.encode(json_prompt)
         input_ids = []
         if hasattr(input_ids_tensor, "tolist"):

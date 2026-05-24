@@ -33,11 +33,14 @@ class ConstraintDecoder:
         self.generated_text += token_str
         
         if self.state == "EXPECTING_KEY":
-            if '"' in token_str and len(self.generated_text.strip()) > 2:
+            # We count the quotes! If there is an EVEN number of quotes, 
+            # it means the key is closed and we are ready for a colon.
+            if '"' in token_str and self.generated_text.count('"') % 2 == 0:
                 self.state = "EXPECTING_COLON"
                 
         if self.state == "EXPECTING_COLON":
-            if ":" in token_str or ":" in self.generated_text:
+            # Removed the generated_text check so it works for multiple parameters!
+            if ":" in token_str:
                 self.state = "EXPECTING_VALUE"
                 
         if self.state == "EXPECTING_VALUE":
