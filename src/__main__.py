@@ -93,13 +93,17 @@ def main() -> None:
         # ==========================================
         # Few-Shot Pattern: Force it into a strict JSON mindset!
         json_prompt = (
-            f"Task: Extract parameters as valid JSON.\n"
+            f"Task: Extract parameters as valid JSON.\n\n"
+            f"Function: fn_add_numbers\n"
+            f"Expected Keys: ['a', 'b']\n"
+            f"Request: 'Add 5 and 10'\n"
+            f"JSON:\n{{\"a\": 5, \"b\": 10}}\n\n"
             f"Function: {chosen_function_name}\n"
-            f"Expected Keys: {expected_keys}\n\n"
+            f"Expected Keys: {expected_keys}\n"
             f"Request: '{prompt_obj.prompt}'\n"
             f"JSON:\n{{"
         )
-                
+
         input_ids_tensor = manager.model.encode(json_prompt)
         input_ids = []
         if hasattr(input_ids_tensor, "tolist"):
