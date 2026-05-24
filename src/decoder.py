@@ -1,10 +1,9 @@
 import numpy as np
 from typing import List, Dict
-from src.llm_manager import LLMManager
 
 class ConstraintDecoder:
     """A State Machine enforcing strict JSON generation rules."""
-    def __init__(self, manager: LLMManager, expected_keys: List[str], schema_types: Dict[str, str]) -> None:
+    def __init__(self, manager, expected_keys: List[str], schema_types: Dict[str, str]) -> None:
         self.manager = manager
         self.expected_keys = expected_keys
         self.schema_types = schema_types
@@ -13,9 +12,18 @@ class ConstraintDecoder:
         self.is_finished: bool = False
         self.state: str = "EXPECTING_KEY"
 
+        # 🚨 NEW: Find every token that is strictly a colon or a space!
+        self._colon_tokens = []
+        for tid, tstr in self.manager.vocab.items():
+            if tstr and all(c in ": \t\nĠ" for c in tstr):
+                self._colon_tokens.append(tid)
+
     def get_valid_ids_for_current_state(self) -> List[int]:
-        if self.state in ["EXPECTING_KEY", "EXPECTING_COLON"]:
+        if self.state == "EXPECTING_KEY":
             return self.manager.get_string_token_ids()
+        elif self.state == "EXPECTING_COLON":
+            # 🚨 THE FIX: Force the colon! No letters or numbers allowed!
+            return self._colon_tokens
         elif self.state == "EXPECTING_VALUE":
             return self.manager.get_number_token_ids()
         return []
@@ -33,18 +41,17 @@ class ConstraintDecoder:
         self.generated_text += token_str
         
         if self.state == "EXPECTING_KEY":
-            # We count the quotes! If there is an EVEN number of quotes, 
-            # it means the key is closed and we are ready for a colon.
+            # Check for an EVEN number of quotes to ensure the key is completely closed
             if '"' in token_str and self.generated_text.count('"') % 2 == 0:
                 self.state = "EXPECTING_COLON"
                 
+        # We use 'if' so the machine can jump multiple states on multi-character tokens (like '": ')
         if self.state == "EXPECTING_COLON":
-            # Removed the generated_text check so it works for multiple parameters!
             if ":" in token_str:
                 self.state = "EXPECTING_VALUE"
                 
         if self.state == "EXPECTING_VALUE":
             if "," in token_str:
                 self.state = "EXPECTING_KEY" 
-            if "}" in token_str:
+            elif "}" in token_str:
                 self.is_finished = True
