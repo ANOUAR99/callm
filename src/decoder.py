@@ -1,56 +1,47 @@
 import numpy as np
+from typing import List, Dict
+from src.llm_manager import LLMManager
 
 class ConstraintDecoder:
-    def __init__(self, manager, expected_keys, schema_types):
+    """A State Machine enforcing strict JSON generation rules."""
+    def __init__(self, manager: LLMManager, expected_keys: List[str], schema_types: Dict[str, str]) -> None:
         self.manager = manager
         self.expected_keys = expected_keys
         self.schema_types = schema_types
         
-        self.generated_text = ""
-        self.is_finished = False
-        
-        # The internal State Machine trackers
-        self.state = "EXPECTING_KEY"
+        self.generated_text: str = ""
+        self.is_finished: bool = False
+        self.state: str = "EXPECTING_KEY"
 
-    def get_valid_ids_for_current_state(self) -> list[int]:
-        """Asks the manager for the allowed tokens based on the current state."""
-        # Note: This assumes you added get_string_token_ids to your manager! 
-        # If not, you can just return manager.get_number_token_ids() as a fallback.
-        if self.state == "EXPECTING_KEY" or self.state == "EXPECTING_COLON":
-            if hasattr(self.manager, "get_string_token_ids"):
-                return self.manager.get_string_token_ids()
-            return [] # Fallback: let the AI guess if no string list exists
-            
+    def get_valid_ids_for_current_state(self) -> List[int]:
+        if self.state in ["EXPECTING_KEY", "EXPECTING_COLON"]:
+            return self.manager.get_string_token_ids()
         elif self.state == "EXPECTING_VALUE":
             return self.manager.get_number_token_ids()
-            
         return []
 
-    def apply_filter(self, logits: np.ndarray, valid_ids: list[int]) -> np.ndarray:
-        """Applies an infinite negative mask to any token not in valid_ids."""
+    def apply_filter(self, logits: np.ndarray, valid_ids: List[int]) -> np.ndarray:
         if not valid_ids:
-            return logits # Safety net: if list is empty, don't filter
+            return logits
             
         mask = np.ones(logits.size, dtype=bool)
         mask[valid_ids] = False
         logits[mask] = -np.inf
         return logits
 
-    def update_state(self, token_str: str):
-        """Moves the state machine forward based on the punctuation the AI generated."""
+    def update_state(self, token_str: str) -> None:
         self.generated_text += token_str
         
         if self.state == "EXPECTING_KEY":
-            # If we see a closing quote (and we've generated more than just the opening bracket)
             if '"' in token_str and len(self.generated_text.strip()) > 2:
                 self.state = "EXPECTING_COLON"
                 
-        elif self.state == "EXPECTING_COLON":
-            if ":" in token_str:
+        if self.state == "EXPECTING_COLON":
+            if ":" in token_str or ":" in self.generated_text:
                 self.state = "EXPECTING_VALUE"
                 
-        elif self.state == "EXPECTING_VALUE":
+        if self.state == "EXPECTING_VALUE":
             if "," in token_str:
-                self.state = "EXPECTING_KEY" # Loop back for the next parameter!
-            elif "}" in token_str:
-                self.is_finished = True      # We are completely done!
+                self.state = "EXPECTING_KEY" 
+            if "}" in token_str:
+                self.is_finished = True

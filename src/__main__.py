@@ -1,49 +1,48 @@
 import argparse
 import json
-import sys
+import os
 import numpy as np
-import torch
-from typing import List
-
-print(f"🔥 GPU WAKEUP CHECK: {torch.cuda.is_available()}")
+from typing import List, Dict, Any
 
 from src.llm_manager import LLMManager
 from src.parser import load_function_definition, load_input_prompts
 from src.decoder import ConstraintDecoder
-from src.models import FunctionDefinition
 
-def parse_arguments():
-    """Handles the command-line arguments required by the project."""
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="LLM Function Calling Engine")
     parser.add_argument("--functions_definition", type=str, default="data/input/function_definitions.json")
     parser.add_argument("--input", type=str, default="data/input/function_calling_tests.json")
     parser.add_argument("--output", type=str, default="data/output/function_calling_results.json")
     return parser.parse_args()
 
-def main():
+def main() -> None:
     args = parse_arguments()
     
     print("Loading definitions and prompts...")
     functions = load_function_definition(args.functions_definition)
     prompts = load_input_prompts(args.input)
     
+    if not functions or not prompts:
+        print("Data files missing or empty. Exiting.")
+        return
+        
     print("Initializing LLM Model...")
     manager = LLMManager()
-    
-    final_results = []
+    final_results: List[Dict[str, Any]] = []
     
     for prompt_obj in prompts:
         print(f"\nProcessing prompt: {prompt_obj.prompt}")
-        llm_prompt = f"Given the prompt '{prompt_obj.prompt}', which function should be called? Return only the function name."
+        available_funcs = [f.name for f in functions]
+        llm_prompt = f"Choose the correct function from this list: {available_funcs}\nUser Prompt: '{prompt_obj.prompt}'\nExact Function Name:"
         
-        # ==========================================
-        # PHASE A: Pick the Function
-        # ==========================================
-        input_ids = manager.model.encode(llm_prompt)
-        if hasattr(input_ids, "tolist"):
-            input_ids = input_ids.tolist()
-        if len(input_ids) > 0 and isinstance(input_ids[0], list):
-            input_ids = input_ids[0]
+        # Phase A: Router
+        input_ids_tensor = manager.model.encode(llm_prompt)
+        input_ids: List[int] = []
+        if hasattr(input_ids_tensor, "tolist"):
+            input_ids_raw = input_ids_tensor.tolist()
+            input_ids = input_ids_raw[0] if (len(input_ids_raw) > 0 and isinstance(input_ids_raw[0], list)) else input_ids_raw
+        else:
+            input_ids = list(input_ids_tensor)
             
         chosen_function_name = ""
         
@@ -58,13 +57,10 @@ def main():
             chosen_function_name += best_str
             input_ids.append(best_token_id)
             
-        # The Bulldozer (Safely un-indented!)
         chosen_function_name = chosen_function_name.replace("Ġ", "").replace(" ", "").strip()
         print(f"-> LLM selected function: '{chosen_function_name}'")
         
-        # ==========================================
-        # PHASE B: Set up the Decoder
-        # ==========================================
+        # Phase B: Initialization
         try:
             chosen_func_def = next(f for f in functions if f.name == chosen_function_name)
         except StopIteration:
@@ -72,50 +68,45 @@ def main():
             continue 
         
         expected_keys = list(chosen_func_def.parameters.keys()) 
-        schema_types = {k: v["type"] for k, v in chosen_func_def.parameters.items()} 
-        
+        schema_types = {k: v.type for k, v in chosen_func_def.parameters.items()} 
         decoder = ConstraintDecoder(manager, expected_keys, schema_types)
         
-        # ==========================================
-        # PHASE C: The Constrained JSON Loop
-        # ==========================================
-        json_prompt = f"Generate JSON parameters for the function {chosen_function_name} based on the prompt: '{prompt_obj.prompt}'. Parameters: {expected_keys}. Output valid JSON starting with {{"
+        # Phase C: Generator
+        json_prompt = f"You are a strict data formatter. Function: {chosen_function_name}. Expected Keys: {expected_keys}. Prompt: '{prompt_obj.prompt}'. Return ONLY a valid JSON object. Do not explain. Do not write code. \n{{"
         
-        input_ids = manager.model.encode(json_prompt)
-        if hasattr(input_ids, "tolist"):
-            input_ids = input_ids.tolist()
-        if len(input_ids) > 0 and isinstance(input_ids[0], list):
-            input_ids = input_ids[0]
+        input_ids_tensor = manager.model.encode(json_prompt)
+        input_ids = []
+        if hasattr(input_ids_tensor, "tolist"):
+            input_ids_raw = input_ids_tensor.tolist()
+            input_ids = input_ids_raw[0] if (len(input_ids_raw) > 0 and isinstance(input_ids_raw[0], list)) else input_ids_raw
+        else:
+            input_ids = list(input_ids_tensor)
             
         print("-> Generated Parameters: {", end="", flush=True)
-        
-        max_tokens = 50 # THE KILL SWITCH
+        max_tokens = 50 
         tokens_generated = 0
 
         while not decoder.is_finished and tokens_generated < max_tokens:
             logits = np.array(manager.model.get_logits_from_input_ids(input_ids)).flatten()
-            
             valid_ids = decoder.get_valid_ids_for_current_state()
             logits = decoder.apply_filter(logits, valid_ids)
             
             best_token_id = int(np.argmax(logits))
             best_token_str = manager.model.decode([best_token_id])
-            
-            # The real-time stream print
             print(best_token_str, end="", flush=True)
             
             decoder.update_state(best_token_str)
             input_ids.append(best_token_id)
             tokens_generated += 1
             
-        print() # Clean new line when JSON completes
+        print() 
         
-        # ==========================================
-        # PHASE D: Save the Results
-        # ==========================================
+        # Phase D: Extraction and Garbage Cleansing
         try:
-            # We add the opening bracket manually since we streamed it to the terminal!
             clean_json_str = "{" + decoder.generated_text
+            if "}" in clean_json_str:
+                clean_json_str = clean_json_str[:clean_json_str.find("}") + 1]
+                
             parsed_params = json.loads(clean_json_str)
             
             final_results.append({
@@ -124,12 +115,16 @@ def main():
                 "parameters": parsed_params
             })
         except json.JSONDecodeError:
-            print(f"⚠️ Error: Decoder generated invalid JSON for {chosen_function_name}. Skipping save.")
+            print(f"⚠️ Error: Decoder generated invalid JSON. String was: {clean_json_str}")
 
-    with open(args.output, "w") as f:
-        json.dump(final_results, f, indent=4)
-        
-    print(f"\nSuccessfully processed {len(prompts)} prompts. Results saved to {args.output}")
+    # IO Write
+    try:
+        os.makedirs(os.path.dirname(args.output), exist_ok=True)
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(final_results, f, indent=4)
+        print(f"\nSuccessfully processed {len(prompts)} prompts. Results saved to {args.output}")
+    except Exception as e:
+        print(f"Failed to write output: {e}")
 
 if __name__ == "__main__":
     main()
