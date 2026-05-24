@@ -30,7 +30,21 @@ class LLMManager:
             print(e)
             sys.exit(1)
         return parsed_vocab
-
+    
+    def get_string_token_ids(self) -> list[int]:
+        if self._string_token_ids is not None:
+            return self._string_token_ids
+        
+        # We allow a wide range of standard text characters for JSON strings and keys
+        allowed_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_- \n\tĠ\"'")
+        valid_ids = []
+        for token_id, token_str in self.vocab.items():
+            if token_str and all(char in allowed_chars for char in token_str):
+                valid_ids.append(token_id)
+                
+        self._string_token_ids = valid_ids
+        return self._string_token_ids
+        
     def get_number_token_ids(self) -> list[int]:
         # If we already did the math, instantly return the saved list!
         if self._number_token_ids is not None:

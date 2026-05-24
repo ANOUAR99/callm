@@ -78,7 +78,8 @@ def main() -> None:
             continue 
         
         expected_keys = list(chosen_func_def.parameters.keys()) 
-        schema_types = {k: v.type for k, v in chosen_func_def.parameters.items()} 
+        # Safely extract the type whether Pydantic made it an object or left it as a dict!
+        schema_types = {k: v["type"] if isinstance(v, dict) else v.type for k, v in chosen_func_def.parameters.items()} 
         decoder = ConstraintDecoder(manager, expected_keys, schema_types)
         
         # ==========================================
