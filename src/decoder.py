@@ -71,7 +71,12 @@ class ConstraintDecoder:
                 self.keys_generated += 1
                 
         elif self.state == "EXPECTING_VALUE":
-            if "," in token_str:
-                self.state = "EXPECTING_KEY" 
-            elif "}" in token_str:
-                self.is_finished = True
+            # Are we currently inside a string literal? (Odd number of quotes means yes)
+            is_inside_string = self.generated_text.count('"') % 2 != 0
+            
+            # Only process commas and braces if they are OUTSIDE of a string
+            if not is_inside_string:
+                if "," in token_str:
+                    self.state = "EXPECTING_KEY" 
+                elif "}" in token_str:
+                    self.is_finished = True

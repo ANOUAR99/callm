@@ -30,15 +30,14 @@ class LLMManager:
         if self._string_token_ids is not None:
             return self._string_token_ids
         
-        # Includes colons, commas, and brackets!
-        allowed_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_- \n\tĠ\"':,{}")
+        # Allow almost all characters for strings so we don't ban punctuation!
         valid_ids = []
         for token_id, token_str in self.vocab.items():
-            if token_str and all(char in allowed_chars for char in token_str):
+            if token_str and "\n" not in token_str: 
                 valid_ids.append(token_id)
                 
         self._string_token_ids = valid_ids
-        return self._string_token_ids
+        return self._string_token_ids 
         
     def get_number_token_ids(self) -> list[int]:
         if self._number_token_ids is not None:
