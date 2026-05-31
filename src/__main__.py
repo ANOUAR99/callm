@@ -2,10 +2,10 @@ import argparse
 import json
 import os
 import numpy as np
-import torch
+# import torch
 from typing import List, Dict, Any
 
-print(f"🔥 GPU WAKEUP CHECK: {torch.cuda.is_available()}")
+# print(f"🔥 GPU WAKEUP CHECK: {torch.cuda.is_available()}")
 
 from src.llm_manager import LLMManager
 from src.parser import load_function_definition, load_input_prompts
