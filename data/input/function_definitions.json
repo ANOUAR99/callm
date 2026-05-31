@@ -1,17 +1,28 @@
 [
-  {
-    "name": "fn_add_numbers",
-    "description": "Add two numbers together.",
-    "parameters": {
-      "a": {
-        "type": "number"
-      },
-      "b": {
-        "type": "number"
-      }
+    {
+        "name": "fn_calculate_trajectory",
+        "description": "Calculates the trajectory of a projectile.",
+        "parameters": {
+            "velocity": { "type": "number" },
+            "angle": { "type": "number" }
+        },
+        "returns": { "type": "number" }
     },
-    "returns": {
-      "type": "number"
+    {
+        "name": "fn_create_user",
+        "description": "Creates a new user profile.",
+        "parameters": {
+            "username": { "type": "string" },
+            "age": { "type": "number" }
+        },
+        "returns": { "type": "string" }
+    },
+    {
+        "name": "fn_format_disk",
+        "description": "Formats a specified drive.",
+        "parameters": {
+            "drive_letter": { "type": "string" }
+        },
+        "returns": { "type": "string" }
     }
-  }
 ]

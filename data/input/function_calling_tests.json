@@ -1,5 +1,20 @@
 [
-  {
-    "prompt": "What is 2 + 2?"
-  }
+    {
+        "prompt": "Calculate it for a speed of 105.75 and an angle of -12.5"
+    }, 
+    {
+        "prompt": "Create a user named 'O'Connor' who is 28 years old."
+    },
+    {
+        "prompt": "Format the C:\\ drive immediately!"
+    },
+    {
+        "prompt": "What is the capital of France?"
+    },
+    {
+        "prompt": ""
+    },
+    {
+        "prompt": "Create user DROP TABLE users;-- with age 999999999999999999"
+    }
 ]
