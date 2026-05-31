@@ -12,8 +12,8 @@ class ConstraintDecoder:
         self.is_finished: bool = False
         self.state: str = "EXPECTING_KEY"
         
+        # 🚨 Tracks how many parameters we have generated!
         self.keys_generated: int = 0  
-        self.current_key: str = "" # 🚨 NEW: Track the key we are currently generating a value for
 
         self._colon_tokens = []
         for tid, tstr in self.manager.vocab.items():
@@ -26,15 +26,9 @@ class ConstraintDecoder:
         elif self.state == "EXPECTING_COLON":
             return self._colon_tokens
         elif self.state == "EXPECTING_VALUE":
-            # 🚨 NEW: Dynamically select tokens based on the schema!
-            expected_type = self.schema_types.get(self.current_key, "string")
+            valid_ids = self.manager.get_number_token_ids()
             
-            if expected_type == "number":
-                valid_ids = self.manager.get_number_token_ids()
-            else:
-                valid_ids = self.manager.get_string_token_ids()
-            
-            # The kill shot: If we have generated all expected keys, ban the comma!
+            # 🚨 THE KILL SHOT: If we have generated all expected keys, ban the comma!
             if self.keys_generated >= len(self.expected_keys):
                 valid_ids = [tid for tid in valid_ids if "," not in self.manager.vocab.get(tid, "")]
                 
@@ -54,17 +48,27 @@ class ConstraintDecoder:
         self.generated_text += token_str
         
         if self.state == "EXPECTING_KEY":
-            # 🚨 NEW: Extract the key name right before we transition to EXPECTING_COLON
+            # Check if a quote closed the key in this exact token
             if '"' in token_str and self.generated_text.count('"') % 2 == 0:
-                self.state = "EXPECTING_COLON"
+                # Extract the key safely
                 parts = self.generated_text.split('"')
                 if len(parts) >= 3:
-                    self.current_key = parts[-2] # The key is between the last set of quotes
+                    self.current_key = parts[-2]
                 
+                # 🚨 THE FIX: Did this token already include the colon?
+                # Check the text strictly AFTER the final closing quote
+                after_quote = self.generated_text[self.generated_text.rfind('"')+1:]
+                
+                if ":" in after_quote:
+                    self.state = "EXPECTING_VALUE"
+                    self.keys_generated += 1
+                else:
+                    self.state = "EXPECTING_COLON"
+                    
         elif self.state == "EXPECTING_COLON":
             if ":" in token_str:
                 self.state = "EXPECTING_VALUE"
-                self.keys_generated += 1  
+                self.keys_generated += 1
                 
         elif self.state == "EXPECTING_VALUE":
             if "," in token_str:
