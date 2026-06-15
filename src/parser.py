@@ -3,6 +3,7 @@ import sys
 from typing import List
 from src.models import Funcdef, PromptInput
 
+
 def load_function_definition(filepath: str) -> List[Funcdef]:
     parsed_function = []
     try:

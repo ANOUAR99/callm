@@ -1,19 +1,23 @@
 import numpy as np
 from typing import List, Dict
 
+
 class ConstraintDecoder:
     """A State Machine enforcing strict JSON generation rules."""
-    def __init__(self, manager, expected_keys: List[str], schema_types: Dict[str, str]) -> None:
+
+    def __init__(
+        self, manager, expected_keys: List[str], schema_types: Dict[str, str]
+    ) -> None:
         self.manager = manager
         self.expected_keys = expected_keys
         self.schema_types = schema_types
-        
+
         self.generated_text: str = ""
         self.is_finished: bool = False
         self.state: str = "EXPECTING_KEY"
-        
-        self.keys_generated: int = 0  
-        self.current_key: str = "" 
+
+        self.keys_generated: int = 0
+        self.current_key: str = ""
 
         self._colon_tokens = []
         for tid, tstr in self.manager.vocab.items():
@@ -27,22 +31,28 @@ class ConstraintDecoder:
             return self._colon_tokens
         elif self.state == "EXPECTING_VALUE":
             expected_type = self.schema_types.get(self.current_key, "string")
-            
+
             if expected_type == "number":
                 valid_ids = self.manager.get_number_token_ids()
             else:
                 valid_ids = self.manager.get_string_token_ids()
-            
+
             if self.keys_generated >= len(self.expected_keys):
-                valid_ids = [tid for tid in valid_ids if "," not in self.manager.vocab.get(tid, "")]
-                
+                valid_ids = [
+                    tid
+                    for tid in valid_ids
+                    if "," not in self.manager.vocab.get(tid, "")
+                ]
+
             return valid_ids
         return []
 
-    def apply_filter(self, logits: np.ndarray, valid_ids: List[int]) -> np.ndarray:
+    def apply_filter(
+        self, logits: np.ndarray, valid_ids: List[int]
+    ) -> np.ndarray:
         if not valid_ids:
             return logits
-            
+
         mask = np.ones(logits.size, dtype=bool)
         mask[valid_ids] = False
         logits[mask] = -np.inf
@@ -50,33 +60,33 @@ class ConstraintDecoder:
 
     def update_state(self, token_str: str) -> None:
         self.generated_text += token_str
-        
+
         if self.state == "EXPECTING_KEY":
             if '"' in token_str and self.generated_text.count('"') % 2 == 0:
                 parts = self.generated_text.split('"')
                 if len(parts) >= 3:
                     self.current_key = parts[-2]
-                
-                after_quote = self.generated_text[self.generated_text.rfind('"')+1:]
-                
+
+                after_quote = self.generated_text[
+                    self.generated_text.rfind('"') + 1:
+                ]
+
                 if ":" in after_quote:
                     self.state = "EXPECTING_VALUE"
                     self.keys_generated += 1
                 else:
                     self.state = "EXPECTING_COLON"
-                    
+
         elif self.state == "EXPECTING_COLON":
             if ":" in token_str:
                 self.state = "EXPECTING_VALUE"
                 self.keys_generated += 1
-                
+
         elif self.state == "EXPECTING_VALUE":
-            # Are we currently inside a string literal? (Odd number of quotes means yes)
             is_inside_string = self.generated_text.count('"') % 2 != 0
-            
-            # Only process commas and braces if they are OUTSIDE of a string
+
             if not is_inside_string:
                 if "," in token_str:
-                    self.state = "EXPECTING_KEY" 
+                    self.state = "EXPECTING_KEY"
                 elif "}" in token_str:
                     self.is_finished = True

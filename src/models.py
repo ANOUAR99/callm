@@ -1,5 +1,6 @@
-
 from pydantic import BaseModel
+from typing import Any
+
 
 class Funcdef(BaseModel):
     name: str
@@ -11,12 +12,8 @@ class Funcdef(BaseModel):
 class PromptInput(BaseModel):
     prompt: str
 
-from typing import Any
 
 class Funcresults(BaseModel):
     prompt: str
     name: str
     parameters: dict[str, Any]
-
-
-

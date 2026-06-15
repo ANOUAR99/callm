@@ -3,6 +3,7 @@ import sys
 from typing import Dict
 from llm_sdk import Small_LLM_Model
 
+
 class LLMManager:
     def __init__(self):
         print("Initializing LLM Model...")
@@ -25,30 +26,28 @@ class LLMManager:
             print(e)
             sys.exit(1)
         return parsed_vocab
-    
+
     def get_string_token_ids(self) -> list[int]:
         if self._string_token_ids is not None:
             return self._string_token_ids
-        
-        # Allow almost all characters for strings so we don't ban punctuation!
+
         valid_ids = []
         for token_id, token_str in self.vocab.items():
-            if token_str and "\n" not in token_str: 
+            if token_str and "\n" not in token_str:
                 valid_ids.append(token_id)
-                
+
         self._string_token_ids = valid_ids
-        return self._string_token_ids 
-        
+        return self._string_token_ids
+
     def get_number_token_ids(self) -> list[int]:
         if self._number_token_ids is not None:
             return self._number_token_ids
-            
-        # 🚨 Includes commas and brackets so the AI can finish the JSON!
-        allowed_chars = set("0123456789.- \n\tĠ,}]\"'") 
+
+        allowed_chars = set("0123456789.- \n\tĠ,}]\"'")
         valid_ids = []
         for token_id, token_str in self.vocab.items():
             if token_str and all(char in allowed_chars for char in token_str):
                 valid_ids.append(token_id)
-                
+
         self._number_token_ids = valid_ids
         return self._number_token_ids

@@ -1,1 +1,25 @@
-[]
+[
+    {
+        "prompt": "Calculate it for a speed of 105.75 and an angle of -12.5",
+        "name": "fn_calculate_trajectory",
+        "parameters": {
+            "velocity": 105.75,
+            "angle": -12.5
+        }
+    },
+    {
+        "prompt": "Create a user named 'O'Connor' who is 28 years old.",
+        "name": "fn_create_user",
+        "parameters": {
+            "username": "O'Connor",
+            "age": 28
+        }
+    },
+    {
+        "prompt": "Format the C:\\ drive immediately!",
+        "name": "fn_format_disk",
+        "parameters": {
+            "drive_letter": "C:"
+        }
+    }
+]
