@@ -1,20 +1,32 @@
 [
-    {
-        "prompt": "Calculate it for a speed of 105.75 and an angle of -12.5"
-    }, 
-    {
-        "prompt": "Create a user named 'O'Connor' who is 28 years old."
-    },
-    {
-        "prompt": "Format the C:\\ drive immediately!"
-    },
-    {
-        "prompt": "What is the capital of France?"
-    },
-    {
-        "prompt": ""
-    },
-    {
-        "prompt": "Create user DROP TABLE users;-- with age 999999999999999999"
-    }
+  {
+    "prompt": "What is the sum of 2 and 3?"
+  },
+  {
+    "prompt": "What is the sum of 265 and 345?"
+  },
+  {
+    "prompt": "Greet shrek"
+  },
+  {
+    "prompt": "Greet john"
+  },
+  {
+    "prompt": "Reverse the string 'hello'"
+  },
+  {
+    "prompt": "What is the square root of 16?"
+  },
+  {
+    "prompt": "Calculate the square root of 144"
+  },
+  {
+    "prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS"
+  },
+  {
+    "prompt": "Replace all vowels in 'Programming is fun' with asterisks"
+  },
+  {
+    "prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'"
+  }
 ]

@@ -16,7 +16,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--functions_definition",
         type=str,
-        default="data/input/function_definitions.json",
+        default="data/input/functions_definition.json",
     )
     parser.add_argument(
         "--input", type=str, default="data/input/function_calling_tests.json"
@@ -117,17 +117,22 @@ def main() -> None:
         }
         decoder = ConstraintDecoder(manager, expected_keys, schema_types)
 
-        json_prompt = (
-            f"Task: Extract parameters as valid JSON.\n\n"
-            f"Function: fn_add_numbers\n"
-            f"Expected Keys: ['a', 'b']\n"
-            f"Request: 'Add 5 and 10'\n"
-            f'JSON:\n{{"a": 5, "b": 10}}\n\n'
-            f"Function: {chosen_function_name}\n"
-            f"Expected Keys: {expected_keys}\n"
-            f"Request: '{prompt_obj.prompt}'\n"
-            f"JSON:\n{{"
-        )
+        context = "You are a function calling system.\nGiven a user request, identify the correct function to call.\nAvailable functions:"
+        for f in functions:
+            context += f"\n  - {f.name}: {f.description}\n"
+            for pname, pschema in f.parameters.items():
+                context += f"      {pname}: {pschema['type']}\n"
+        context += "\n"
+
+        json_prompt = context + "\n"
+        json_prompt += "Generate only the parameter values.\nDo not generate JSON keys.\n"
+        # Prevent the LLM from executing the function itself
+        json_prompt += "Do not execute the function yourself. Only extract the raw arguments from the request.\n"
+
+        json_prompt += f"Function: {chosen_function_name}\n"
+        json_prompt += f"Expected Keys: {expected_keys}\n"
+        json_prompt += f"Request: ```{prompt_obj.prompt}```\n"
+        json_prompt += "JSON:\n"
 
         input_ids_tensor = manager.model.encode(json_prompt)
         input_ids = []
@@ -144,41 +149,99 @@ def main() -> None:
         else:
             input_ids = list(input_ids_tensor)
 
-        print("-> Generated Parameters: {", end="", flush=True)
+        print("-> Generated Parameters: ", end="", flush=True)
         max_tokens = 50
         tokens_generated = 0
 
-        while not decoder.is_finished and tokens_generated < max_tokens:
-            logits = np.array(
-                manager.model.get_logits_from_input_ids(input_ids)
-            ).flatten()
-            valid_ids = decoder.get_valid_ids_for_current_state()
-            logits = decoder.apply_filter(logits, valid_ids)
+        generated_json = "{"
 
-            best_token_id = int(np.argmax(logits))
-            best_token_str = manager.model.decode([best_token_id])
-            print(best_token_str, end="", flush=True)
+        for idx, key in enumerate(expected_keys):
+            decoder.current_key_index = idx
+            expected_type = schema_types[key]
 
-            decoder.update_state(best_token_str)
-            input_ids.append(best_token_id)
-            tokens_generated += 1
+            # 1. Explicitly handle leading quotes for strings
+            if expected_type == "string":
+                generated_json += f'"{key}": "'  # Inject the leading quote manually
+            else:
+                generated_json += f'"{key}": '
 
-        print()
+            current_context = json_prompt + generated_json
 
+            input_ids_tensor = manager.model.encode(current_context)
+            if hasattr(input_ids_tensor, "tolist"):
+                input_ids_raw = input_ids_tensor.tolist()
+                input_ids = (
+                    input_ids_raw[0]
+                    if (len(input_ids_raw) > 0 and isinstance(input_ids_raw[0], list))
+                    else input_ids_raw
+                )
+            else:
+                input_ids = list(input_ids_tensor)
+
+            value_text = ""
+            tokens_generated = 0
+
+            while tokens_generated < 25: # Slightly increased for safety
+                logits = np.array(manager.model.get_logits_from_input_ids(input_ids)).flatten()
+                valid_ids = decoder.get_valid_ids_for_current_state()
+                logits = decoder.apply_filter(logits, valid_ids)
+                
+                best_token_id = int(np.argmax(logits))
+                token_str = manager.model.decode([best_token_id])
+                
+                value_text += token_str
+                input_ids.append(best_token_id)
+                tokens_generated += 1
+
+                # 2. Updated breaking conditions
+                if expected_type == "number":
+                    if any(x in token_str for x in [",", "}", "\n"]):
+                        break
+                else: # string
+                    # We only need ONE quote to close the string now
+                    if '"' in token_str: 
+                        break
+
+            value_text = value_text.strip()
+
+            # 3. Clean up the parsed values based on type
+            if expected_type == "number":
+                for stop in [",", "}", "\n"]:
+                    if stop in value_text:
+                        value_text = value_text.split(stop)[0]
+                generated_json += value_text
+            else:
+                # For strings, grab everything up to the first closing quote
+                if '"' in value_text:
+                    value_text = value_text.split('"')[0]
+                generated_json += value_text + '"' # Close the string
+
+            # Add comma or close the JSON block
+            if idx < len(expected_keys) - 1:
+                generated_json += ", "
+            else:
+                generated_json += "}"
+
+        print(generated_json)
         try:
-            clean_json_str = "{" + decoder.generated_text
+            clean_json_str = generated_json
             if "}" in clean_json_str:
                 clean_json_str = clean_json_str[: clean_json_str.find("}") + 1]
 
             parsed_params = json.loads(clean_json_str)
 
-            final_results.append(
-                {
+            for key, val in parsed_params.items():
+                if schema_types.get(key) == "number":
+                    try:
+                        parsed_params[key] = float(val)
+                    except (ValueError, TypeError):
+                        pass
+
+                final_results.append({
                     "prompt": prompt_obj.prompt,
                     "name": chosen_function_name,
                     "parameters": parsed_params,
-                }
-            )
+                })
         except json.JSONDecodeError:
             print(
                 f"⚠️ Error: Decoder generated invalid JSON. String was: "
