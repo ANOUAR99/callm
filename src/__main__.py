@@ -117,7 +117,8 @@ def main() -> None:
         }
         decoder = ConstraintDecoder(manager, expected_keys, schema_types)
 
-        context = "You are a function calling system.\nGiven a user request, identify the correct function to call.\nAvailable functions:"
+        # context = "You are a function calling system.\nGiven a user request, identify the correct function to call.\nAvailable functions:"
+        context = "Tools\n"
         for f in functions:
             context += f"\n  - {f.name}: {f.description}\n"
             for pname, pschema in f.parameters.items():
@@ -125,14 +126,15 @@ def main() -> None:
         context += "\n"
 
         json_prompt = context + "\n"
-        json_prompt += "Generate only the parameter values.\nDo not generate JSON keys.\n"
+        # json_prompt += "Generate only the parameter values.\nDo not generate JSON keys.\n"
         # Prevent the LLM from executing the function itself
-        json_prompt += "Do not execute the function yourself. Only extract the raw arguments from the request.\n"
+        # json_prompt += "Do not execute the function yourself. Only extract the raw arguments from the request.\n"
 
-        json_prompt += f"Function: {chosen_function_name}\n"
-        json_prompt += f"Expected Keys: {expected_keys}\n"
-        json_prompt += f"Request: ```{prompt_obj.prompt}```\n"
-        json_prompt += "JSON:\n"
+        # json_prompt += f"Function:\n{chosen_function_name}\n"
+        # json_prompt += f"Expected Keys:\n{expected_keys}\n"
+        json_prompt += f"User: {prompt_obj.prompt}\n"
+        # json_prompt += "JSON:\n"
+        json_prompt += f'{{"tool":"{chosen_function_name}",parameters:{{'
 
         input_ids_tensor = manager.model.encode(json_prompt)
         input_ids = []
@@ -150,7 +152,6 @@ def main() -> None:
             input_ids = list(input_ids_tensor)
 
         print("-> Generated Parameters: ", end="", flush=True)
-        max_tokens = 50
         tokens_generated = 0
 
         generated_json = "{"
@@ -237,11 +238,11 @@ def main() -> None:
                     except (ValueError, TypeError):
                         pass
 
-                final_results.append({
-                    "prompt": prompt_obj.prompt,
-                    "name": chosen_function_name,
-                    "parameters": parsed_params,
-                })
+            final_results.append({
+                "prompt": prompt_obj.prompt,
+                "name": chosen_function_name,
+                "parameters": parsed_params,
+            })
         except json.JSONDecodeError:
             print(
                 f"⚠️ Error: Decoder generated invalid JSON. String was: "
